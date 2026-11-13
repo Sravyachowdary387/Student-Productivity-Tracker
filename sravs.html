@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Student Productivity Tracker</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 28px 16px;
+    font-family: Arial, sans-serif;
+    background: #f4f7fb;
+    color: #243047;
+}
+
+.container {
+    max-width: 1050px;
+    margin: auto;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 28px;
+}
+
+header h1 {
+    color: #173b70;
+}
+
+header p {
+    color: #65738a;
+}
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 28px;
+}
+
+.stat, .panel {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 3px 14px #19325a14;
+}
+
+.stat {
+    text-align: center;
+}
+
+.stat h3 {
+    font-size: 16px;
+    color: #52627a;
+}
+
+.stat p {
+    font-size: 26px;
+    font-weight: bold;
+    color: #173b70;
+    margin: 8px;
+}
+
+.panel {
+    margin-bottom: 24px;
+}
+
+h2 {
+    color: #173b70;
+    margin-top: 0;
+}
+
+input {
+    width: 100%;
+    padding: 13px;
+    margin-bottom: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    font-size: 15px;
+}
+
+button {
+    border: none;
+    border-radius: 7px;
+    padding: 10px 14px;
+    color: white;
+    cursor: pointer;
+    margin: 3px;
+    font-size: 14px;
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.primary {
+    background: #246bce;
+}
+
+.complete {
+    background: #218653;
+}
+
+.undo, .cancel {
+    background: #64748b;
+}
+
+.edit {
+    background: #d58a18;
+}
+
+.delete {
+    background: #d64545;
+}
+
+.task {
+    border-left: 5px solid #e2a32e;
+    background: white;
+    border-radius: 9px;
+    padding: 16px;
+    margin-bottom: 13px;
+    box-shadow: 0 2px 9px #19325a10;
+}
+
+.task.done {
+    border-left-color: #218653;
+}
+
+.task p {
+    margin: 8px 0;
+    overflow-wrap: anywhere;
+}
+
+.status {
+    font-weight: bold;
+}
+
+.empty {
+    text-align: center;
+    color: #718096;
+    padding: 20px;
+}
+
+#message {
+    min-height: 20px;
+}
+
+.track {
+    height: 9px;
+    background: #e6edf5;
+    border-radius: 20px;
+    overflow: hidden;
+    margin-top: 10px;
+}
+
+#bar {
+    height: 100%;
+    background: #218653;
+    width: 0;
+}
+
+@media(max-width:700px) {
+    .stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<header>
+    <h1>🎓 Student Productivity Tracker</h1>
+    <p>Organize academic tasks and monitor your daily progress.</p>
+</header>
+
+
+<!-- DASHBOARD -->
+
+<section class="stats">
+
+    <div class="stat">
+        <h3>Total Tasks</h3>
+        <p id="total">0</p>
+    </div>
+
+    <div class="stat">
+        <h3>Completed</h3>
+        <p id="completed">0</p>
+    </div>
+
+    <div class="stat">
+        <h3>Pending</h3>
+        <p id="pending">0</p>
+    </div>
+
+    <div class="stat">
+        <h3>Progress</h3>
+        <p id="progress">0%</p>
+        <div class="track">
+            <div id="bar"></div>
+        </div>
+    </div>
+
+</section>
+
+
+<!-- ADD TASK -->
+
+<section class="panel">
+
+    <h2 id="heading">Add a Task</h2>
+
+    <form id="form">
+
+        <input
+            id="subject"
+            type="text"
+            placeholder="Enter subject"
+            maxlength="100"
+            required
+        >
+
+        <input
+            id="task"
+            type="text"
+            placeholder="Enter task"
+            maxlength="300"
+            required
+        >
+
+        <button class="primary" id="save" type="submit">
+            Add Task
+        </button>
+
+        <button class="cancel" id="cancel" type="button" hidden>
+            Cancel Edit
+        </button>
+
+    </form>
+
+    <p id="message"></p>
+
+</section>
+
+
+<!-- TASK LIST -->
+
+<section class="panel">
+
+    <h2>My Tasks</h2>
+
+    <div id="list">
+        <p class="empty">Loading tasks...</p>
+    </div>
+
+</section>
+
+</div>
+
+
+<script>
+
+const API = "http://127.0.0.1:8000";
+
+const form = document.getElementById("form");
+const subject = document.getElementById("subject");
+const task = document.getElementById("task");
+const list = document.getElementById("list");
+const message = document.getElementById("message");
+
+let tasks = [];
+let editingId = null;
+
+
+// API REQUEST
+
+async function request(path, options = {}) {
+
+    const res = await fetch(API + path, {
+        ...options,
+        headers: {
+            "Content-Type": "application/json",
+            ...(options.headers || {})
+        }
+    });
+
+    if (!res.ok) {
+        let msg = "Request failed";
+
+        try {
+            msg = (await res.json()).detail || msg;
+        } catch {}
+
+        throw Error(msg);
+    }
+
+    return res.status === 204 ? null : res.json();
+}
+
+
+// MESSAGE
+
+function say(text, error = false) {
+
+    message.textContent = text;
+
+    message.style.color = error
+        ? "#b42318"
+        : "#218653";
+}
+
+
+// LOAD TASKS
+
+async function load() {
+
+    try {
+
+        tasks = await request("/tasks");
+
+        draw();
+        stats();
+
+    } catch (e) {
+
+        list.innerHTML =
+            '<p class="empty">Backend is not connected. Start the server and refresh this page.</p>';
+
+        say(e.message, true);
+    }
+}
+
+
+// DASHBOARD
+
+function stats() {
+
+    let total = tasks.length;
+
+    let done = tasks.filter(
+        x => x.completed
+    ).length;
+
+    let pct = total
+        ? Math.round(done / total * 100)
+        : 0;
+
+    document.getElementById("total").textContent = total;
+
+    document.getElementById("completed").textContent = done;
+
+    document.getElementById("pending").textContent = total - done;
+
+    document.getElementById("progress").textContent = pct + "%";
+
+    document.getElementById("bar").style.width = pct + "%";
+}
+
+
+// DISPLAY TASKS
+
+function draw() {
+
+    list.innerHTML = "";
+
+    if (!tasks.length) {
+
+        list.innerHTML =
+            '<p class="empty">No tasks yet. Add your first task above.</p>';
+
+        return;
+    }
+
+    tasks.forEach(x => {
+
+        const card = document.createElement("article");
+
+        card.className = "task" + (
+            x.completed ? " done" : ""
+        );
+
+        const s = document.createElement("p");
+        const t = document.createElement("p");
+        const st = document.createElement("p");
+        const actions = document.createElement("div");
+
+        const sb = document.createElement("strong");
+        sb.textContent = "Subject: ";
+
+        s.append(sb, document.createTextNode(x.subject));
+
+        const tb = document.createElement("strong");
+        tb.textContent = "Task: ";
+
+        t.append(tb, document.createTextNode(x.task));
+
+        st.className = "status";
+
+        st.textContent = "Status: " + (
+            x.completed ? "Completed" : "Pending"
+        );
+
+
+        // COMPLETE / UNDO BUTTON
+
+        const statusBtn = button(
+            x.completed ? "Undo Complete" : "Complete Task",
+            x.completed ? "undo" : "complete",
+            () => toggle(x.id)
+        );
+
+
+        // EDIT BUTTON
+
+        const editBtn = button(
+            "Edit",
+            "edit",
+            () => edit(x)
+        );
+
+
+        // DELETE BUTTON
+
+        const delBtn = button(
+            "Delete",
+            "delete",
+            () => remove(x.id)
+        );
+
+
+        actions.append(
+            statusBtn,
+            editBtn,
+            delBtn
+        );
+
+        card.append(
+            s,
+            t,
+            st,
+            actions
+        );
+
+        list.append(card);
+
+    });
+
+}
+
+
+// CREATE BUTTON
+
+function button(label, cls, fn) {
+
+    const b = document.createElement("button");
+
+    b.textContent = label;
+    b.className = cls;
+    b.type = "button";
+
+    b.addEventListener("click", fn);
+
+    return b;
+}
+
+
+// ADD / UPDATE TASK
+
+form.addEventListener("submit", async e => {
+
+    e.preventDefault();
+
+    const data = {
+        subject: subject.value.trim(),
+        task: task.value.trim()
+    };
+
+    if (!data.subject || !data.task) {
+
+        say("Enter both subject and task.", true);
+
+        return;
+    }
+
+    const save = document.getElementById("save");
+
+    save.disabled = true;
+
+    try {
+
+        if (editingId === null) {
+
+            await request("/tasks", {
+                method: "POST",
+                body: JSON.stringify(data)
+            });
+
+            say("Task added successfully");
+
+        } else {
+
+            await request("/tasks/" + editingId, {
+                method: "PUT",
+                body: JSON.stringify(data)
+            });
+
+            say("Task updated successfully");
+        }
+
+        reset();
+
+        await load();
+
+    } catch (err) {
+
+        say(err.message, true);
+
+    } finally {
+
+        save.disabled = false;
+    }
+
+});
+
+
+// EDIT TASK
+
+function edit(x) {
+
+    editingId = x.id;
+
+    subject.value = x.subject;
+
+    task.value = x.task;
+
+    document.getElementById("heading").textContent =
+        "Edit Task";
+
+    document.getElementById("save").textContent =
+        "Update Task";
+
+    document.getElementById("cancel").hidden = false;
+
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+    });
+}
+
+
+// RESET FORM
+
+function reset() {
+
+    editingId = null;
+
+    form.reset();
+
+    document.getElementById("heading").textContent =
+        "Add a Task";
+
+    document.getElementById("save").textContent =
+        "Add Task";
+
+    document.getElementById("cancel").hidden = true;
+}
+
+
+// CANCEL EDIT
+
+document.getElementById("cancel").addEventListener(
+    "click",
+    reset
+);
+
+
+// COMPLETE / UNDO TASK
+
+async function toggle(id) {
+
+    try {
+
+        await request("/tasks/" + id + "/complete", {
+            method: "PUT"
+        });
+
+        say("Task status updated");
+
+        await load();
+
+    } catch (e) {
+
+        say(e.message, true);
+    }
+}
+
+
+// DELETE TASK
+
+async function remove(id) {
+
+    if (!confirm("Are you sure you want to delete this task?")) {
+        return;
+    }
+
+    try {
+
+        await request("/tasks/" + id, {
+            method: "DELETE"
+        });
+
+        say("Task deleted");
+
+        if (editingId === id) {
+            reset();
+        }
+
+        await load();
+
+    } catch (e) {
+
+        say(e.message, true);
+    }
+}
+
+
+// START APPLICATION
+
+load();
+
+</script>
+
+</body>
+</html>
